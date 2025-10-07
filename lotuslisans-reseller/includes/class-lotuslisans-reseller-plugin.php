@@ -141,7 +141,7 @@ class LotusLisans_Reseller_Plugin {
      */
     public function activate() {
         $current_host = $this->get_current_host();
-main
+
     }
 
     /**

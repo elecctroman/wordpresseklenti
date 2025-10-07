@@ -11,10 +11,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 
 get_header();
 
-$api_base          = trailingslashit( rest_url( 'lotuslisans-reseller/v1' ) );
-$products_endpoint = $api_base . 'products';
-$orders_endpoint   = $api_base . 'orders';
-$plugin            = function_exists( 'lotuslisans_reseller' ) ? lotuslisans_reseller() : null;
+
 $docs_title        = __( 'Reseller API Dokümantasyonu', 'lotuslisans-reseller' );
 ?>
 <div class="lotuslisans-api-docs" style="max-width: 960px; margin: 40px auto; padding: 0 20px;">
