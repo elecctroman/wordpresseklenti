@@ -11,11 +11,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 
 get_header();
 
-$plugin            = function_exists( 'lotuslisans_reseller' ) ? lotuslisans_reseller() : null;
-$rest_namespace    = class_exists( 'LotusLisans_Reseller_Plugin' ) ? LotusLisans_Reseller_Plugin::REST_NAMESPACE : 'reseller-api/v1';
-$api_base          = $plugin && method_exists( $plugin, 'get_api_base_url' ) ? $plugin->get_api_base_url() : trailingslashit( rest_url( $rest_namespace ) );
-$products_endpoint = $api_base . 'products';
-$orders_endpoint   = $api_base . 'orders';
+
 $docs_title        = __( 'Reseller API Dokümantasyonu', 'lotuslisans-reseller' );
 ?>
 <div class="lotuslisans-api-docs" style="max-width: 960px; margin: 40px auto; padding: 0 20px;">
