@@ -141,8 +141,7 @@ class LotusLisans_Reseller_Plugin {
      */
     public function activate() {
         $current_host = $this->get_current_host();
-        update_option( self::LICENSE_OPTION, $current_host, false );
-
+main
     }
 
     /**
@@ -153,11 +152,7 @@ class LotusLisans_Reseller_Plugin {
             return;
         }
 
-        $stored_host = get_option( self::LICENSE_OPTION );
-        $current_host = $this->get_current_host();
 
-        if ( empty( $stored_host ) ) {
-            update_option( self::LICENSE_OPTION, $current_host, false );
             return;
         }
 
@@ -186,6 +181,7 @@ class LotusLisans_Reseller_Plugin {
     }
 
     /**
+
      * Get current site host.
      *
      * @return string
