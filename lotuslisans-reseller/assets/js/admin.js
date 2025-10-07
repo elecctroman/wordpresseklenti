@@ -2,18 +2,25 @@
     'use strict';
 
     $(function(){
-        var $button = $('#lotuslisans-test-connection');
-        if ( !$button.length ) {
+        var $buttons = $('.lotuslisans-test-connection');
+
+        if ( !$buttons.length || typeof lotuslisansReseller === 'undefined' ) {
             return;
         }
 
-        var $result = $('.lotuslisans-test-result');
-
-        $button.on('click', function(event){
+        $buttons.on('click', function(event){
             event.preventDefault();
 
-            if ( typeof lotuslisansReseller === 'undefined' ) {
-                return;
+            var $button  = $(this);
+            var provider = $button.data('provider') || 'lotus';
+            var $wrapper = $button.closest('.lotuslisans-test-wrapper');
+            var $result  = $wrapper.find('.lotuslisans-test-result');
+
+            if ( !$result.length ) {
+                $result = $('<span/>', {
+                    'class': 'lotuslisans-test-result',
+                    'aria-live': 'polite'
+                }).appendTo($wrapper);
             }
 
             $button.prop('disabled', true);
@@ -22,18 +29,28 @@
             $.post(
                 lotuslisansReseller.ajaxUrl,
                 {
-                    action: 'lotuslisans_test_connection',
-                    nonce: lotuslisansReseller.nonce
+                    action: 'lotuslisans_test_provider',
+                    nonce: lotuslisansReseller.nonce,
+                    provider: provider
                 }
             ).done(function(response){
+                var message;
+
                 if ( response && response.success ) {
-                    $result.addClass('success').text(response.data);
+                    message = response.data && response.data.message ? response.data.message : lotuslisansReseller.success;
+                    $result.addClass('success').text(message);
                 } else {
-                    var message = response && response.data ? response.data : lotuslisansReseller.error;
+                    message = response && response.data ? response.data : lotuslisansReseller.error;
                     $result.addClass('error').text(message);
                 }
-            }).fail(function(){
-                $result.addClass('error').text(lotuslisansReseller.error);
+            }).fail(function(xhr){
+                var message = lotuslisansReseller.error;
+
+                if ( xhr && xhr.responseJSON && xhr.responseJSON.data ) {
+                    message = xhr.responseJSON.data;
+                }
+
+                $result.addClass('error').text(message);
             }).always(function(){
                 $button.prop('disabled', false);
             });

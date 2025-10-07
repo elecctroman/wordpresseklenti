@@ -11,10 +11,45 @@ if ( ! defined( 'ABSPATH' ) ) {
 
 require_once LOTUSLISANS_RESELLER_PATH . 'includes/class-lotuslisans-api-client.php';
 require_once LOTUSLISANS_RESELLER_PATH . 'includes/class-lotuslisans-admin.php';
+require_once LOTUSLISANS_RESELLER_PATH . 'includes/providers/class-lotuslisans-abstract-provider-client.php';
+require_once LOTUSLISANS_RESELLER_PATH . 'includes/providers/class-lotuslisans-netgsm-client.php';
+require_once LOTUSLISANS_RESELLER_PATH . 'includes/providers/class-lotuslisans-turkpin-client.php';
+require_once LOTUSLISANS_RESELLER_PATH . 'includes/providers/class-lotuslisans-pinabi-client.php';
 
 class LotusLisans_Reseller_Plugin {
 
+    /**
+     * Option key for storing integration settings.
+     */
+    const OPTION_KEY = 'lotuslisans_reseller_options';
 
+    /**
+     * Option key for storing last synced product snapshot.
+     */
+    const PRODUCTS_OPTION = 'lotuslisans_reseller_products';
+
+    /**
+     * Transient key used for temporary admin notices.
+     */
+    const NOTICE_TRANSIENT = 'lotuslisans_reseller_notices';
+
+    /**
+     * Transient key used for caching Lotus balance data.
+     */
+    const BALANCE_TRANSIENT = 'lotuslisans_reseller_balance';
+
+    /**
+     * Supported provider slugs.
+     */
+    const PROVIDER_LOTUS   = 'lotus';
+    const PROVIDER_NETGSM  = 'netgsm';
+    const PROVIDER_TURKPIN = 'turkpin';
+    const PROVIDER_PINABI  = 'pinabi';
+
+    /**
+     * Option key used for license host binding.
+     */
+    const LICENSE_OPTION = 'lotuslisans_license_host';
 
     /**
      * Plugin instance.
@@ -43,6 +78,13 @@ class LotusLisans_Reseller_Plugin {
      * @var string
      */
     protected $plugin_basename;
+
+    /**
+     * Cached provider client instances.
+     *
+     * @var array<string, LotusLisans_Abstract_Provider_Client>
+     */
+    protected $provider_clients = array();
 
     /**
      * Singleton bootstrap.
@@ -79,9 +121,7 @@ class LotusLisans_Reseller_Plugin {
      * @return array
      */
     public function get_options() {
-        $defaults = array(
-            'api_key' => '',
-        );
+        $defaults = $this->get_default_options();
 
         $options = get_option( self::OPTION_KEY, array() );
 
@@ -89,7 +129,44 @@ class LotusLisans_Reseller_Plugin {
             $options = array();
         }
 
-        return wp_parse_args( $options, $defaults );
+        if ( isset( $options['api_key'] ) && ( ! isset( $options[ self::PROVIDER_LOTUS ]['api_key'] ) || empty( $options[ self::PROVIDER_LOTUS ]['api_key'] ) ) ) {
+            $options[ self::PROVIDER_LOTUS ]['api_key'] = $options['api_key'];
+            unset( $options['api_key'] );
+        }
+
+        return array_replace_recursive( $defaults, $options );
+    }
+
+    /**
+     * Retrieve default options for all providers.
+     *
+     * @return array
+     */
+    protected function get_default_options() {
+        return array(
+            self::PROVIDER_LOTUS   => array(
+                'api_key' => '',
+            ),
+            self::PROVIDER_NETGSM  => array(
+                'base_url' => 'https://api.netgsm.com.tr',
+                'usercode' => '',
+                'password' => '',
+                'header'   => '',
+            ),
+            self::PROVIDER_TURKPIN => array(
+                'base_url'    => 'https://panel.turkpin.net/api/v1',
+                'dealer_code' => '',
+                'api_key'     => '',
+                'secret_key'  => '',
+            ),
+            self::PROVIDER_PINABI  => array(
+                'base_url'    => 'https://panel.pinabi.com/api',
+                'username'    => '',
+                'password'    => '',
+                'api_key'     => '',
+                'merchant_id' => '',
+            ),
+        );
     }
 
     /**
@@ -98,6 +175,10 @@ class LotusLisans_Reseller_Plugin {
      * @param array $options Options to update.
      */
     public function update_options( array $options ) {
+        $defaults = $this->get_default_options();
+
+        $options = array_replace_recursive( $defaults, $options );
+
         update_option( self::OPTION_KEY, $options );
     }
 
@@ -107,9 +188,45 @@ class LotusLisans_Reseller_Plugin {
      * @return string
      */
     public function get_api_key() {
-        $options = $this->get_options();
+        $options = $this->get_provider_options( self::PROVIDER_LOTUS );
 
         return isset( $options['api_key'] ) ? $options['api_key'] : '';
+    }
+
+    /**
+     * Retrieve provider specific options.
+     *
+     * @param string $provider Provider slug.
+     *
+     * @return array
+     */
+    public function get_provider_options( $provider ) {
+        $options = $this->get_options();
+
+        return isset( $options[ $provider ] ) && is_array( $options[ $provider ] ) ? $options[ $provider ] : array();
+    }
+
+    /**
+     * Update provider specific options.
+     *
+     * @param string $provider Provider slug.
+     * @param array  $values   Values to merge.
+     */
+    public function update_provider_options( $provider, array $values ) {
+        $options  = $this->get_options();
+        $defaults = $this->get_default_options();
+
+        if ( ! isset( $options[ $provider ] ) || ! is_array( $options[ $provider ] ) ) {
+            $options[ $provider ] = array();
+        }
+
+        $options[ $provider ] = array_replace_recursive(
+            isset( $defaults[ $provider ] ) ? $defaults[ $provider ] : array(),
+            $options[ $provider ],
+            $values
+        );
+
+        update_option( self::OPTION_KEY, $options );
     }
 
     /**
@@ -127,10 +244,33 @@ class LotusLisans_Reseller_Plugin {
      * @return array
      */
     public function sanitize_options( $options ) {
-        $sanitized = array();
+        $current   = $this->get_options();
+        $sanitized = $current;
 
-        if ( isset( $options['api_key'] ) ) {
-            $sanitized['api_key'] = sanitize_text_field( $options['api_key'] );
+        if ( isset( $options[ self::PROVIDER_LOTUS ] ) && is_array( $options[ self::PROVIDER_LOTUS ] ) ) {
+            $sanitized[ self::PROVIDER_LOTUS ]['api_key'] = sanitize_text_field( $options[ self::PROVIDER_LOTUS ]['api_key'] );
+        }
+
+        if ( isset( $options[ self::PROVIDER_NETGSM ] ) && is_array( $options[ self::PROVIDER_NETGSM ] ) ) {
+            $sanitized[ self::PROVIDER_NETGSM ]['base_url'] = esc_url_raw( $options[ self::PROVIDER_NETGSM ]['base_url'] );
+            $sanitized[ self::PROVIDER_NETGSM ]['usercode'] = sanitize_text_field( $options[ self::PROVIDER_NETGSM ]['usercode'] );
+            $sanitized[ self::PROVIDER_NETGSM ]['password'] = sanitize_text_field( $options[ self::PROVIDER_NETGSM ]['password'] );
+            $sanitized[ self::PROVIDER_NETGSM ]['header']   = sanitize_text_field( $options[ self::PROVIDER_NETGSM ]['header'] );
+        }
+
+        if ( isset( $options[ self::PROVIDER_TURKPIN ] ) && is_array( $options[ self::PROVIDER_TURKPIN ] ) ) {
+            $sanitized[ self::PROVIDER_TURKPIN ]['base_url']    = esc_url_raw( $options[ self::PROVIDER_TURKPIN ]['base_url'] );
+            $sanitized[ self::PROVIDER_TURKPIN ]['dealer_code'] = sanitize_text_field( $options[ self::PROVIDER_TURKPIN ]['dealer_code'] );
+            $sanitized[ self::PROVIDER_TURKPIN ]['api_key']     = sanitize_text_field( $options[ self::PROVIDER_TURKPIN ]['api_key'] );
+            $sanitized[ self::PROVIDER_TURKPIN ]['secret_key']  = sanitize_text_field( $options[ self::PROVIDER_TURKPIN ]['secret_key'] );
+        }
+
+        if ( isset( $options[ self::PROVIDER_PINABI ] ) && is_array( $options[ self::PROVIDER_PINABI ] ) ) {
+            $sanitized[ self::PROVIDER_PINABI ]['base_url']    = esc_url_raw( $options[ self::PROVIDER_PINABI ]['base_url'] );
+            $sanitized[ self::PROVIDER_PINABI ]['username']    = sanitize_text_field( $options[ self::PROVIDER_PINABI ]['username'] );
+            $sanitized[ self::PROVIDER_PINABI ]['password']    = sanitize_text_field( $options[ self::PROVIDER_PINABI ]['password'] );
+            $sanitized[ self::PROVIDER_PINABI ]['api_key']     = sanitize_text_field( $options[ self::PROVIDER_PINABI ]['api_key'] );
+            $sanitized[ self::PROVIDER_PINABI ]['merchant_id'] = sanitize_text_field( $options[ self::PROVIDER_PINABI ]['merchant_id'] );
         }
 
         return $sanitized;
@@ -142,6 +282,9 @@ class LotusLisans_Reseller_Plugin {
     public function activate() {
         $current_host = $this->get_current_host();
 
+        if ( ! empty( $current_host ) ) {
+            update_option( self::LICENSE_OPTION, $current_host, false );
+        }
     }
 
     /**
@@ -152,7 +295,10 @@ class LotusLisans_Reseller_Plugin {
             return;
         }
 
+        $stored_host  = get_option( self::LICENSE_OPTION );
+        $current_host = $this->get_current_host();
 
+        if ( empty( $stored_host ) ) {
             return;
         }
 
@@ -308,7 +454,7 @@ class LotusLisans_Reseller_Plugin {
             array(
                 'id'    => 'lotuslisans-balance',
                 'title' => esc_html( $balance_text ),
-                'href'  => admin_url( 'admin.php?page=lotuslisans-reseller' ),
+                'href'  => admin_url( 'admin.php?page=lotuslisans-reseller-lotus' ),
                 'meta'  => array( 'title' => __( 'LotusLisans API Ayarları', 'lotuslisans-reseller' ) ),
             )
         );
@@ -320,9 +466,53 @@ class LotusLisans_Reseller_Plugin {
                     'id'     => 'lotuslisans-alerts',
                     'parent' => 'top-secondary',
                     'title'  => __( 'LotusLisans Bildirimleri', 'lotuslisans-reseller' ),
-                    'href'   => admin_url( 'admin.php?page=lotuslisans-reseller' ),
+                    'href'   => admin_url( 'admin.php?page=lotuslisans-reseller-lotus' ),
                 )
             );
+        }
+    }
+
+    /**
+     * Retrieve a provider client instance.
+     *
+     * @param string $provider Provider slug.
+     *
+     * @return LotusLisans_Abstract_Provider_Client|null
+     */
+    public function provider_client( $provider ) {
+        if ( isset( $this->provider_clients[ $provider ] ) ) {
+            return $this->provider_clients[ $provider ];
+        }
+
+        $client = $this->instantiate_provider_client( $provider );
+
+        if ( $client ) {
+            $this->provider_clients[ $provider ] = $client;
+        }
+
+        return $client;
+    }
+
+    /**
+     * Create a provider client instance for a given provider slug.
+     *
+     * @param string $provider Provider slug.
+     *
+     * @return LotusLisans_Abstract_Provider_Client|null
+     */
+    protected function instantiate_provider_client( $provider ) {
+        switch ( $provider ) {
+            case self::PROVIDER_NETGSM:
+                return new LotusLisans_Netgsm_Client( $this );
+
+            case self::PROVIDER_TURKPIN:
+                return new LotusLisans_Turkpin_Client( $this );
+
+            case self::PROVIDER_PINABI:
+                return new LotusLisans_Pinabi_Client( $this );
+
+            default:
+                return null;
         }
     }
 
