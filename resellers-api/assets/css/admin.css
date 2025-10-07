@@ -1,0 +1,17 @@
+.resellers-api .resellers-api-test-result {
+    margin-left: 10px;
+    font-weight: 600;
+}
+
+.resellers-api .resellers-api-test-result.success {
+    color: #1d9d5f;
+}
+
+.resellers-api .resellers-api-test-result.error {
+    color: #d63638;
+}
+
+.resellers-api .resellers-api-sync-summary {
+    list-style: disc;
+    margin-left: 20px;
+}
