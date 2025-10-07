@@ -14,11 +14,7 @@ require_once LOTUSLISANS_RESELLER_PATH . 'includes/class-lotuslisans-admin.php';
 
 class LotusLisans_Reseller_Plugin {
 
-    const OPTION_KEY        = 'lotuslisans_reseller_options';
-    const LICENSE_OPTION    = 'lotuslisans_reseller_license_host';
-    const PRODUCTS_OPTION   = 'lotuslisans_reseller_last_products';
-    const NOTICE_TRANSIENT  = 'lotuslisans_reseller_notice_buffer';
-    const BALANCE_TRANSIENT = 'lotuslisans_reseller_balance_cache';
+
 
     /**
      * Plugin instance.
@@ -74,6 +70,7 @@ class LotusLisans_Reseller_Plugin {
         add_action( 'admin_init', array( $this, 'register_settings' ) );
         add_action( 'admin_notices', array( $this, 'render_buffered_notices' ) );
         add_action( 'admin_bar_menu', array( $this, 'register_admin_bar_nodes' ), 100 );
+
     }
 
     /**
@@ -145,6 +142,7 @@ class LotusLisans_Reseller_Plugin {
     public function activate() {
         $current_host = $this->get_current_host();
         update_option( self::LICENSE_OPTION, $current_host, false );
+
     }
 
     /**
@@ -207,6 +205,7 @@ class LotusLisans_Reseller_Plugin {
     }
 
     /**
+
      * Store product snapshot for change detection.
      *
      * @param array $products Products array.
@@ -332,6 +331,7 @@ class LotusLisans_Reseller_Plugin {
     }
 
     /**
+
      * Provide access to the admin handler.
      *
      * @return LotusLisans_Admin
